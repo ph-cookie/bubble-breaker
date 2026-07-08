@@ -1,0 +1,71 @@
+name: Generate Custom RSS
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    # 毎日 JPT 5, 10, 15, 20時  (UTC指定: 20:00, 1:00, 6:00, 11:00)
+    - cron: '11 0,1,6,20 * * *'
+  workflow_dispatch: # 手動実行用ボタン有効化
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache processed URLs
+        uses: actions/cache@v4
+        with:
+          path: processed_urls.json
+          # run_idを含めることで毎回「新規保存」として上書き（疑似的な状態保存）
+          key: processed-urls-${{ github.run_id }}
+          # 読み込み時は最新の processed-urls- を探して復元
+          restore-keys: |
+            processed-urls-
+
+      # HFモデルのキャッシュ ★
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: ${{ runner.os }}-hf-model-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-hf-model-
+
+      - name: Run main script
+        env:
+          API_KEY1: ${{ secrets.API_KEY1 }}
+          HF_TOKEN1: ${{ secrets.HF_TOKEN1 }}
+        run: |
+          python main.py
+
+      - name: Upload artifact for GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.' # ルートディレクトリ全体（rss.xmlを含む）をアップロード
+
+  deploy:
+    needs: build-and-deploy
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
