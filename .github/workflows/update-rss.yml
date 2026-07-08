@@ -5,9 +5,8 @@ env:
 
 on:
   schedule:
-    # 毎日 JPT 5, 10, 15, 20時  (UTC指定: 20:00, 1:00, 6:00, 11:00)
-    - cron: '11 0,1,6,20 * * *'
-  workflow_dispatch: # 手動実行用ボタン有効化
+    - cron: '11 1,6,11,20 * * *'
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
@@ -29,13 +28,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: processed_urls.json
-          # run_idを含めることで毎回「新規保存」として上書き（疑似的な状態保存）
+          # run_idを含め、毎回「新規保存」として上書き
           key: processed-urls-${{ github.run_id }}
           # 読み込み時は最新の processed-urls- を探して復元
           restore-keys: |
             processed-urls-
 
-      # HFモデルのキャッシュ ★
+      # HFモデルのキャッシュ
       - name: Cache Hugging Face models
         uses: actions/cache@v4
         with:
@@ -48,13 +47,14 @@ jobs:
         env:
           API_KEY1: ${{ secrets.API_KEY1 }}
           HF_TOKEN1: ${{ secrets.HF_TOKEN1 }}
+          USE_GROUNDING: ${{ vars.USE_GROUNDING || 'false' }}  # Variablesで override 可能
         run: |
           python main.py
 
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.' # ルートディレクトリ全体（rss.xmlを含む）をアップロード
+          path: 'rss.xml index.html'
 
   deploy:
     needs: build-and-deploy

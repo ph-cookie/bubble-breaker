@@ -493,7 +493,7 @@ def main():
 
         logger.info(f"処理対象: {len(target_articles)}件")
 
-        logger.info("3. AI再構築とフィード生成")
+        logger.info("3. LLM再構築とフィード生成")
         client = genai.Client(api_key=gemini_key)
         current_run_articles = []
 
@@ -513,11 +513,11 @@ def main():
                 if "429" in str(e):
                     logger.error(f"APIレートリミット到達 (429): {e}")
                 else:
-                    logger.error(f"AI解説生成に失敗: {e}")
+                    logger.error(f"LLM解説生成に失敗: {e}")
                 ai_title       = original_title
                 ai_explanation = (
                     f"【何があったか】\n{summary}\n\n"
-                    f"【知っておくべき背景】\nAI生成エラーのため詳細は利用できません。"
+                    f"【知っておくべき背景】\nLLM生成エラーのため詳細は利用できません。"
                     f"元の記事を参照してください。\n\n"
                     f"【何に影響するか】\n（生成エラー）\n\n"
                     f"【あなたの興味との接点】\n（生成エラー）"
@@ -536,7 +536,7 @@ def main():
             ・興味類似度: {item['sim']:.3f} / 差分スコア: {item['diff']:.3f} / 総合スコア: {item['combined_score']:.3f}
             </p>
             {fallback_notice}
-            <h3>AI解説</h3>
+            <h3>LLM解説</h3>
             {img_html}
             <p>{ai_exp_html}</p>
             <hr>
@@ -580,9 +580,9 @@ def main():
         all_feed_articles = all_feed_articles[:MAX_FEED_ITEMS]
 
         fg = FeedGenerator()
-        fg.title('AI再構築フィード v2')
+        fg.title('LLM再構築フィード v2')
         fg.link(href='https://github.com/', rel='alternate')
-        fg.description('負例クラスタ差分・NMF・動的閾値による3段階フィルタで、興味外ニュースを抽出・AI解説するカスタムフィード')
+        fg.description('負例クラスタ差分・NMF・動的閾値による3段階フィルタで、興味外ニュースを抽出・LLM解説するカスタムフィード')
         fg.language('ja')
 
         for art in all_feed_articles:
@@ -607,7 +607,7 @@ def main():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI再構築フィード v2</title>
+    <title>LLM再構築フィード v2</title>
     <style>
         body {{ font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }}
         h1 {{ border-bottom: 2px solid #333; padding-bottom: 0.5rem; }}
@@ -617,8 +617,8 @@ def main():
     </style>
 </head>
 <body>
-    <h1>AI再構築フィード v2</h1>
-    <p>フィルターバブルを打破するため、ユーザーの関心領域外のニュースをAI（Gemini）が構造化して配信するカスタムフィードです。</p>
+    <h1>LLM再構築フィード v2</h1>
+    <p>フィルターバブルを打破するため、ユーザーの関心領域外のニュースをLLM（Gemini）が構造化して配信するカスタムフィードです。</p>
     <p>
         <span class="badge">① 負例クラスタ差分スコア</span>
         <span class="badge">② NMFトピックモデル</span>
