@@ -51,10 +51,17 @@ jobs:
         run: |
           python main.py
 
+      - name: Prepare Pages directory
+        run: |
+          mkdir public
+          # もし main.py が rss.xml を出力するなら public にコピー
+          # 他に公開したいファイル(index.html等)があればここに追加
+          cp rss.xml public/ || echo "rss.xml not found!"
+          
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'rss.xml', 'index.html'
+          path: 'public'
 
   deploy:
     needs: build-and-deploy
