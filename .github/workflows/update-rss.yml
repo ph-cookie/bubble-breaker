@@ -54,7 +54,7 @@ jobs:
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'rss.xml index.html'
+          path: 'rss.xml' 'index.html'
 
   deploy:
     needs: build-and-deploy
