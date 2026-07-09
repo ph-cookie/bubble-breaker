@@ -22,28 +22,24 @@ import pytz
 from datetime import datetime
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-# ロギング設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# ネットワーク通信のグローバルタイムアウトを設定（ハングアップ防止）
 socket.setdefaulttimeout(15)
 
-# 取得元のRSS URL
 SOURCE_RSS_URLS = [
-    "https://rss.itmedia.co.jp/rss/2.0/business.xml",   # ITmedia ビジネスオンライン
-    "https://prtimes.jp/index.rdf",                     # PR TIMES
-    "https://assets.wor.jp/rss/rdf/nikkei/news.rdf",    # 日経新聞
-    "https://feeds.japan.cnet.com/rss/cnet/all.rdf",    # CNET Japan
-    "https://news.yahoo.co.jp/rss/topics/domestic.xml", # Yahoo 国内
-    "https://news.yahoo.co.jp/rss/topics/world.xml",    # Yahoo 国際
-    "https://news.yahoo.co.jp/rss/topics/business.xml", # Yahoo ビジネス
-    "https://feeds.bbci.co.uk/japanese/rss.xml"         # BBC 日本語版
+    "https://rss.itmedia.co.jp/rss/2.0/business.xml",
+    "https://prtimes.jp/index.rdf",
+    "https://assets.wor.jp/rss/rdf/nikkei/news.rdf",
+    "https://feeds.japan.cnet.com/rss/cnet/all.rdf",
+    "https://news.yahoo.co.jp/rss/topics/domestic.xml",
+    "https://news.yahoo.co.jp/rss/topics/world.xml",
+    "https://news.yahoo.co.jp/rss/topics/business.xml",
+    "https://feeds.bbci.co.uk/japanese/rss.xml"
 ]
 
 EXCLUDE_KEYWORDS = ["有料会員", "会員限定", "ログイン", "この記事は有料", "続きは有料", "プレミアム", "🔒"]
 
-# 興味ありクラスタ
 INTEREST_TEXTS = [
     "IT技術、プログラミング、人工知能、機械学習、データ分析、アルゴリズム、クラウド",
     "ガジェット、スマートフォン、iPhone、Android、デジタル家電、ウェアラブル",
@@ -51,7 +47,6 @@ INTEREST_TEXTS = [
     "旅、自然、登山、キャンプ、アウトドア"
 ]
 
-# 興味なしクラスタ
 DISINTEREST_TEXTS = [
     "政治、選挙、国会、法律、政党、議員、外交、安全保障、防衛",
     "スポーツ、野球、サッカー、バスケ、競馬、格闘技、オリンピック、Jリーグ",
@@ -62,17 +57,18 @@ DISINTEREST_TEXTS = [
 
 GEMINI_MODEL_NAME = 'gemini-3.1-flash-lite'
 
-# --- Grounding設定 ---
 USE_GROUNDING = os.environ.get("USE_GROUNDING", "false").lower() == "true"
 
-# --- フィルタリングパラメータ ---
-K_SIGMA        = 0.5   # 統計的動的閾値: mean + K_SIGMA*std 以上を抽出
-N_TOPICS       = 8     # NMFトピック数（記事数が少ない場合は自動縮小）
-ALPHA          = 0.5   # 負例差分スコアの重み
-BETA           = 0.5   # NMFスコアの重み
-SIGMOID_SCALE  = 8.0   # sigmoid正規化のスケール
+K_SIGMA        = 0.5
+N_TOPICS       = 8
+ALPHA          = 0.5
+BETA           = 0.5
+SIGMOID_SCALE  = 8.0
 
-# キャッシュ設定
+# [修正①] Grounding有効時は処理記事数を上限8件に制限
+# Grounding=True時: 1記事あたり最大10コール消費のため多すぎると429が連発する
+MAX_PROCESS_PER_RUN = 8 if USE_GROUNDING else 15
+
 CACHE_FILE = "processed_urls.json"
 MAX_CACHE_SIZE = 500
 
@@ -86,47 +82,19 @@ def get_mime_type(url: str) -> str:
 
 
 def strip_html(text: str) -> str:
-    """
-    HTMLタグ・エンティティ・URL・フラグメント・記号を徹底的に除去。
-    NMF/embedding前処理用。ノイズ抑制を最優先。
-    """
     if not text:
         return ""
-    
-    # [強化①] HTMLタグ除去（複数形式に対応）
     text = re.sub(r'<[^>]+>', ' ', text)
-    
-    # [強化②] HTMLエンティティ除去
     text = re.sub(r'&[a-zA-Z0-9#]+;', ' ', text)
-    
-    # [強化③] URL完全除去（http/https/ftp）
     text = re.sub(r'(?:https?|ftp)://[^\s]+', ' ', text)
-    
-    # [強化④] URLパラメータフラグメント（?以降、#以降）
     text = re.sub(r'[?#][^\s]*', ' ', text)
-    
-    # [強化⑤] ドメイン名の残存除去（example.com形式）
     text = re.sub(r'[a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z]{2,}', ' ', text)
-    
-    # [強化⑥] メールアドレス除去
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', ' ', text)
-    
-    # [強化⑦] ファイルパス除去
     text = re.sub(r'(?:/|\\)[^\s]*', ' ', text)
-    
-    # [強化⑧] 連続する英字フラグメント（3文字以下）を除去
-    # これにより "f t 5 it a" のようなノイズを抑制
     text = re.sub(r'\b[a-zA-Z]{1,2}\b', ' ', text)
-    
-    # [強化⑨] 数字のみの単語も除去（IDやバージョン番号ノイズ）
     text = re.sub(r'\b\d+\b', ' ', text)
-    
-    # [強化⑩] 記号除去（日本語・英数字・句点以外）
     text = re.sub(r'[^\w\s。、！？「」『』（）・ー]', ' ', text)
-    
-    # [強化⑪] 連続スペースを単一スペースに正規化
     text = re.sub(r'\s+', ' ', text).strip()
-    
     return text
 
 
@@ -152,10 +120,7 @@ def load_cache() -> tuple[List[str], List[Dict]]:
 def save_cache(seen_urls: List[str], current_run_articles: List[Dict]):
     try:
         limited_urls = seen_urls[-MAX_CACHE_SIZE:]
-        data = {
-            "seen_urls": limited_urls,
-            "last_run_articles": current_run_articles
-        }
+        data = {"seen_urls": limited_urls, "last_run_articles": current_run_articles}
         with open(CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info(f"キャッシュ保存成功（URL保持: {len(limited_urls)}件, 保存記事: {len(current_run_articles)}件）")
@@ -209,16 +174,13 @@ def fetch_free_articles(urls: List[str], seen_links: List[str], max_per_feed: in
                 text_to_check = f"{title} {summary}"
                 excluded_kw = next((kw for kw in EXCLUDE_KEYWORDS if kw in text_to_check), None)
                 if excluded_kw:
-                    logger.info(f"除外 ({excluded_kw}): {title[:20]}...")
                     excluded_count += 1
                     continue
                 entry['feed_title'] = feed_title
                 free_articles.append(entry)
                 collected += 1
 
-            if excluded_count == 0 and skipped_count == 0 and collected == 0:
-                logger.info(f"処理対象記事なし: {url}")
-            else:
+            if not (excluded_count == 0 and skipped_count == 0 and collected == 0):
                 logger.info(f"取得完了: {url} (新規: {collected}件 / 除外: {excluded_count}件 / 既読スキップ: {skipped_count}件)")
         except Exception as e:
             logger.error(f"URL取得予期せぬエラー ({url}): {e}")
@@ -226,7 +188,6 @@ def fetch_free_articles(urls: List[str], seen_links: List[str], max_per_feed: in
 
 
 def _sigmoid(arr: np.ndarray, scale: float = SIGMOID_SCALE) -> np.ndarray:
-    """sigmoid正規化。diffスコアのゼロ基準を保持する。"""
     return 1.0 / (1.0 + np.exp(-scale * arr))
 
 
@@ -236,10 +197,6 @@ def compute_nmf_noninterest_scores(
     interest_texts: List[str],
     n_topics: int = N_TOPICS
 ) -> List[float]:
-    """
-    NMFでトピックを抽出し、各記事の「非興味スコア」を返す。
-    strip_htmlを重ねがけしてノイズを徹底的に除去。
-    """
     texts = [
         strip_html(f"{getattr(e, 'title', '')} {getattr(e, 'summary', getattr(e, 'description', ''))}")
         for e in articles
@@ -247,12 +204,7 @@ def compute_nmf_noninterest_scores(
     n_topics = min(n_topics, max(2, len(texts) // 2))
 
     try:
-        vectorizer = TfidfVectorizer(
-            analyzer='char_wb',
-            ngram_range=(2, 3),
-            max_features=3000,
-            min_df=1
-        )
+        vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 3), max_features=3000, min_df=1)
         tfidf_matrix = vectorizer.fit_transform(texts)
         nmf = NMF(n_components=n_topics, random_state=42, max_iter=400)
         doc_topic = nmf.fit_transform(tfidf_matrix)
@@ -273,9 +225,7 @@ def compute_nmf_noninterest_scores(
         row_sums       = doc_topic.sum(axis=1, keepdims=True)
         doc_topic_norm = doc_topic / (row_sums + 1e-8)
         nmf_scores     = doc_topic_norm @ topic_noninterest
-
-        nmf_centered = nmf_scores - nmf_scores.mean()
-        return nmf_centered.tolist()
+        return (nmf_scores - nmf_scores.mean()).tolist()
 
     except Exception as e:
         logger.error(f"NMF処理エラー: {e}。NMFスコアを0で代替します。")
@@ -288,13 +238,6 @@ def filter_articles_by_similarity(
     interest_texts: List[str],
     disinterest_texts: List[str]
 ) -> tuple[List[Dict], bool]:
-    """
-    3段階フィルタリング:
-      ① 負例差分スコア
-      ② NMFスコア
-      ③ 統計的動的閾値
-    [改善] summaryが空の場合はcontentを使用するfallback処理を追加
-    """
     if not articles:
         return [], False
 
@@ -316,21 +259,17 @@ def filter_articles_by_similarity(
             max_disinterest = float(cosine_similarity([article_vecs[idx]], disinterest_vecs)[0].max())
             diff = max_disinterest - max_interest
             diff_scores.append(diff)
-            
-            # [改善] summaryが空の場合はcontentを使用
+
             summary = getattr(entry, 'summary', getattr(entry, 'description', ''))
             if not summary or len(summary.strip()) < 10:
                 content_obj = getattr(entry, 'content', [])
                 if content_obj and content_obj[0].get('value'):
-                    summary = content_obj[0].get('value', '')[:300]  # 最初300文字だけ取得
-            
+                    summary = content_obj[0].get('value', '')[:300]
+
             scored_articles.append({
-                'entry':   entry,
-                'sim':     max_interest,
-                'diff':    diff,
-                'summary': summary
+                'entry': entry, 'sim': max_interest,
+                'diff': diff, 'summary': summary
             })
-            logger.debug(f"  interest={max_interest:.3f} disinterest={max_disinterest:.3f} diff={diff:.3f} | {getattr(entry,'title','')[:30]}")
 
         logger.info("NMFによる潜在トピックスコア算出中...")
         nmf_scores = compute_nmf_noninterest_scores(articles, embedder, interest_texts)
@@ -365,7 +304,15 @@ def filter_articles_by_similarity(
         return [], False
 
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=10, max=65))
+# [修正②] Grounding有効時は専用のリトライ設定（待機時間を大幅に延長）
+def _make_retry_decorator():
+    if USE_GROUNDING:
+        # Grounding=True: AFCが10コール消費するため待機を長めに設定
+        return retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=2, min=30, max=180))
+    else:
+        return retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=10, max=120))
+
+
 def generate_ai_explanation(client: Any, original_title: str, summary: str) -> dict:
     prompt = f"""
 あなたは知的好奇心を持つ読者向けに、専門外のニュースを「わかりやすく・正確に」伝えるライターです。
@@ -424,20 +371,30 @@ def generate_ai_explanation(client: Any, original_title: str, summary: str) -> d
 {summary}
 """
 
-    if USE_GROUNDING:
-        config = types.GenerateContentConfig(
+    # [修正③] Groundingで429が続いた場合はGrounding無効でフォールバック
+    @_make_retry_decorator()
+    def _call(use_grounding: bool) -> Any:
+        cfg = types.GenerateContentConfig(
             temperature=0.2,
-            tools=[types.Tool(google_search=types.GoogleSearch())]
+            tools=[types.Tool(google_search=types.GoogleSearch())] if use_grounding else []
         )
-        logger.info("Grounding有効でリクエスト送信")
-    else:
-        config = types.GenerateContentConfig(temperature=0.2)
+        if use_grounding:
+            logger.info("Grounding有効でリクエスト送信")
+        return client.models.generate_content(
+            model=GEMINI_MODEL_NAME, contents=prompt, config=cfg
+        )
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL_NAME,
-        contents=prompt,
-        config=config
-    )
+    try:
+        response = _call(USE_GROUNDING)
+    except Exception as e:
+        if USE_GROUNDING and "429" in str(e):
+            logger.warning("GroundingでRetryError(429)。Grounding無効でフォールバック再試行します。")
+            try:
+                response = _call(False)
+            except Exception as e2:
+                raise e2
+        else:
+            raise e
 
     result = {"title": original_title, "explanation": ""}
     if response.text:
@@ -450,9 +407,12 @@ def generate_ai_explanation(client: Any, original_title: str, summary: str) -> d
         else:
             result["explanation"] = text
     else:
-        # [改善③] エラーハンドリング強化：生成失敗時に元の要約も併記
-        result["explanation"] = f"【何があったか】\n{summary}\n\n【知っておくべき背景】\n（生成エラー）\n\n【何に影響するか】\n（生成エラー）\n\n【あなたの興味との接点】\n（生成エラー）"
-    
+        result["explanation"] = (
+            f"【何があったか】\n{summary}\n\n"
+            f"【知っておくべき背景】\n（生成エラー）\n\n"
+            f"【何に影響するか】\n（生成エラー）\n\n"
+            f"【あなたの興味との接点】\n（生成エラー）"
+        )
     return result
 
 
@@ -467,7 +427,7 @@ def main():
         if hf_token:
             os.environ["HF_TOKEN"] = hf_token
 
-        logger.info(f"Grounding設定: USE_GROUNDING={USE_GROUNDING}")
+        logger.info(f"Grounding設定: USE_GROUNDING={USE_GROUNDING} / MAX_PROCESS_PER_RUN={MAX_PROCESS_PER_RUN}")
 
         logger.info("0. 処理済みURLキャッシュの読み込み")
         seen_links, last_run_articles = load_cache()
@@ -490,6 +450,11 @@ def main():
             except Exception as e:
                 logger.error(f"モデルロードに失敗: {e}")
                 target_articles, is_fallback = [], False
+
+        # [修正①] 処理記事数を上限で切り詰める
+        if len(target_articles) > MAX_PROCESS_PER_RUN:
+            logger.info(f"処理記事数を上限 {MAX_PROCESS_PER_RUN} 件に切り詰めます（抽出数: {len(target_articles)}件）")
+            target_articles = target_articles[:MAX_PROCESS_PER_RUN]
 
         logger.info(f"処理対象: {len(target_articles)}件")
 
@@ -517,8 +482,7 @@ def main():
                 ai_title       = original_title
                 ai_explanation = (
                     f"【何があったか】\n{summary}\n\n"
-                    f"【知っておくべき背景】\nLLM生成エラーのため詳細は利用できません。"
-                    f"元の記事を参照してください。\n\n"
+                    f"【知っておくべき背景】\nLLM生成エラーのため元の記事を参照してください。\n\n"
                     f"【何に影響するか】\n（生成エラー）\n\n"
                     f"【あなたの興味との接点】\n（生成エラー）"
                 )
@@ -569,7 +533,8 @@ def main():
                 seen_links.append(raw_link)
 
             logger.info(f"処理完了: {ai_title[:30]}...")
-            sleep_sec = 21 if USE_GROUNDING else 6
+            # [修正②] Grounding時は45秒待機（AFCコール分のレート消費を考慮）
+            sleep_sec = 45 if USE_GROUNDING else 8
             time.sleep(sleep_sec)
 
         unique_articles   = {art["id"]: art for art in (current_run_articles + last_run_articles)}
@@ -580,7 +545,7 @@ def main():
         all_feed_articles = all_feed_articles[:MAX_FEED_ITEMS]
 
         fg = FeedGenerator()
-        fg.title('LLM再構築フィード v2')
+        fg.title('LLM再構築フィード')
         fg.link(href='https://github.com/', rel='alternate')
         fg.description('負例クラスタ差分・NMF・動的閾値による3段階フィルタで、興味外ニュースを抽出・LLM解説するカスタムフィード')
         fg.language('ja')
@@ -598,16 +563,15 @@ def main():
 
         save_cache(seen_links, all_feed_articles)
 
-        try:
-            fg.rss_file('rss.xml')
-            logger.info(f"rss.xml 生成完了 (出力件数: {len(all_feed_articles)}件)")
+        fg.rss_file('rss.xml')
+        logger.info(f"rss.xml 生成完了 (出力件数: {len(all_feed_articles)}件)")
 
-            html_content = f"""<!DOCTYPE html>
+        html_content = f"""<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLM再構築フィード v2</title>
+    <title>LLM再構築フィード</title>
     <style>
         body {{ font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }}
         h1 {{ border-bottom: 2px solid #333; padding-bottom: 0.5rem; }}
@@ -617,7 +581,7 @@ def main():
     </style>
 </head>
 <body>
-    <h1>LLM再構築フィード v2</h1>
+    <h1>LLM再構築フィード</h1>
     <p>フィルターバブルを打破するため、ユーザーの関心領域外のニュースをLLM（Gemini）が構造化して配信するカスタムフィードです。</p>
     <p>
         <span class="badge">① 負例クラスタ差分スコア</span>
@@ -630,19 +594,14 @@ def main():
     <p>お使いのRSSリーダー（Feedly, Inoreaderなど）に以下のリンクを登録してください。</p>
     <a href="rss.xml" class="rss-link">RSSフィード (rss.xml) を取得</a>
     <p style="margin-top: 3rem; font-size: 0.8rem; color: #666;">
-        Powered by GitHub Actions & Gemini API<br>
-        <a href="https://github.com/">GitHub Repository</a>
+        Powered by GitHub Actions & Gemini API
     </p>
 </body>
 </html>
 """
-            with open('index.html', 'w', encoding='utf-8') as f:
-                f.write(html_content)
-            logger.info("index.html 生成完了")
-
-        except Exception as e:
-            logger.error(f"ファイルの書き出しに失敗しました: {e}")
-            raise
+        with open('index.html', 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        logger.info("index.html 生成完了")
 
     except Exception as e:
         logger.critical(f"予期せぬ致命的なエラーにより処理が中断されました: {e}", exc_info=True)
