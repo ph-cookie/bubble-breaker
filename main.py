@@ -365,7 +365,7 @@ def filter_articles_by_similarity(
         return [], False
 
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=10, max=120))
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=2, min=10, max=65))
 def generate_ai_explanation(client: Any, original_title: str, summary: str) -> dict:
     prompt = f"""
 あなたは知的好奇心を持つ読者向けに、専門外のニュースを「わかりやすく・正確に」伝えるライターです。
@@ -569,7 +569,7 @@ def main():
                 seen_links.append(raw_link)
 
             logger.info(f"処理完了: {ai_title[:30]}...")
-            sleep_sec = 15 if USE_GROUNDING else 8
+            sleep_sec = 21 if USE_GROUNDING else 6
             time.sleep(sleep_sec)
 
         unique_articles   = {art["id"]: art for art in (current_run_articles + last_run_articles)}

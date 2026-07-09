@@ -113,30 +113,36 @@ graph TD
 ## 6. セットアップ手順
 
 1. **リポジトリの準備**
+
    本リポジトリを自身のGitHubアカウントにクローン、またはフォークして作成する。
 
 2. **各種APIキー・トークンの取得**
+
    * [Google AI Studio](https://aistudio.google.com/) から Gemini API キーを取得。
    * [Hugging Face](https://huggingface.co/settings/tokens) から Access Token (Read権限) を取得。
 
 3. **GitHub Secrets の設定**
+
    GitHubリポジトリの `Settings` > `Secrets and variables` > `Actions` に、以下の環境変数を登録する。
    * `API_KEY1`: 取得したGemini APIキー
    * `HF_TOKEN1`: 取得したHugging Faceトークン
 
 4. **GitHub Variables / 環境変数の設定 (任意)**
-* `USE_GROUNDING`: "true" に設定すると、LLMの生成においてGoogle Search Groundingが有効になります（APIの利用制限にご注意ください）。
+
+   * `USE_GROUNDING`: "true" に設定すると、LLMの生成においてGoogle Search Groundingが有効になります（APIの利用制限にご注意ください）。
 
 5. **GitHub Pages の有効化**
-GitHubリポジトリの `Settings` > `Pages` にて、Build and deployment の Source を「GitHub Actions」などに適切に設定する。
+
+    GitHubリポジトリの `Settings` > `Pages` にて、Build and deployment の Source を「GitHub Actions」などに適切に設定する。
 
 6. **ソースコードのカスタマイズ**
-`main.py` 内の以下の変数を、目的に応じてカスタマイズしてください。
-* `SOURCE_RSS_URLS`: 取得元となるニュースメディアのRSS URLリスト
-* `INTEREST_TEXTS`: 自身の現在の興味領域（興味ありクラスタ）
-* `DISINTEREST_TEXTS`: 遠ざけたい領域（興味なしクラスタ）
-* `EXCLUDE_KEYWORDS`: 有料記事などを除外するためのキーワードリスト
-* `K_SIGMA` / `N_TOPICS`: フィルタリングの統計的閾値やトピック数の調整
+
+    `main.py` 内の以下の変数を、目的に応じてカスタマイズしてください。
+   * `SOURCE_RSS_URLS`: 取得元となるニュースメディアのRSS URLリスト
+   * `INTEREST_TEXTS`: 自身の現在の興味領域（興味ありクラスタ）
+   * `DISINTEREST_TEXTS`: 遠ざけたい領域（興味なしクラスタ）
+   * `EXCLUDE_KEYWORDS`: 有料記事などを除外するためのキーワードリスト
+   * `K_SIGMA` / `N_TOPICS`: フィルタリングの統計的閾値やトピック数の調整
 
 ## 7. 利用方法
 
