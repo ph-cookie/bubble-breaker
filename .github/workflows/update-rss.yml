@@ -57,6 +57,7 @@ jobs:
           # もし main.py が rss.xml を出力するなら public にコピー
           # 他に公開したいファイル(index.html等)があればここに追加
           cp rss.xml public/ || echo "rss.xml not found!"
+          cp index.html public/ || echo "index.html not found!"
           
       - name: Upload artifact for GitHub Pages
         uses: actions/upload-pages-artifact@v3
