@@ -352,20 +352,20 @@ def generate_ai_explanation(client: Any, original_title: str, summary: str) -> d
 === 出力フォーマット ===
 【タイトル】
 (タイトル本文)
-
+<br>
 【解説】
 【何があったか】
 (本文)
-
+<br>
 【知っておくべき背景】
 (本文)
-
+<br>
 【何に影響するか】
 (本文)
-
+<br>
 【あなたの興味との接点】
 (本文)
-
+<br>
 === 対象テキスト ===
 【{original_title}】
 {summary}
