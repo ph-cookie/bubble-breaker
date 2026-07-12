@@ -41,7 +41,7 @@ The selected articles are then processed using LLM technology to: rewrite titles
 > While efforts have been made to improve factual accuracy through techniques like Google Search Grounding, there may be instances of hallucination characteristic of LLM outputs.
 > **For precise factual information and details, please always verify by reading the original news articles (source materials) linked within the feed.**
 
-## 2. System flow
+## 2. System Flow
 
 <details>
 <summary style="color: #666; font-size: 0.9em; cursor: pointer;">
@@ -55,19 +55,20 @@ graph TD
     C --> D{Read URL or Excluded Keywords?}
     D -- Yes --> E[Skip / Log Excluded Items]
     D -- No --> F[Accumulate New Articles]
-    
+
     F --> G{Are There New Articles?}
     G -- No --> K
     G -- Yes --> H[Thorough HTML Sanitization & Bulk Vectorization using SentenceTransformer]
-    
-    H --> I[3-Stage Filtering:<br/>1. Negative Example Difference Score<br/>2. NMF Score<br/>3. Statistical Dynamic Threshold]
+
+    H --> I[3-Stage Filtering:\n1. Negative Example Difference Score\n2. NMF Score\n3. Statistical Dynamic Threshold]
     I -- Threshold Exceeded --> J[Extract Non-Relevant News]
     I -- No Cases --> J2[Force Extraction of Top 3 Ensemble Score Items]
-    
-    J --> L[Structured Generation via LLM & Title Rewriting]
-    J2 --> L
-    L -- API Limits, etc.: Automatic Retries using tenacity & Fallback Mechanism --> M[Dynamic MIME Type Detection / HTML Format Generation]
-    
+
+    J --> L1[Pass 1: Generate all articles WITHOUT Grounding\n8-second sleep between each article]
+    J2 --> L1
+    L1 --> L2[Pass 2: Top N articles by combined_score ONLY\n60s pre-wait → Grounding re-generation\n429: 90s wait, up to 3 retries\nFallback to no-Grounding on total failure]
+    L2 --> M[Dynamic MIME Type Detection / HTML Format Generation]
+
     M --> K[Combine New and Existing Articles, Extract Latest 30 Items]
     K --> N[Cache Save: Latest Read URLs & Article Data]
     N --> O[Generate Custom RSS File using feedgen]
@@ -79,31 +80,31 @@ graph TD
 
 ## 3. Key Features
 
-### Advanced 3-Stage Inverse Filtering Algorithm
+* **Advanced 3-Stage Inverse Filtering Algorithm**
 
-Rather than relying on simple text comparison, the system achieves high-precision filtering of irrelevant content by ensembling three metrics: the similarity difference between "interest" and "non-interest" clusters (Negative Example Difference), Latent Topic Analysis using NMF (Non-negative Matrix Factorization), and a statistical dynamic threshold based on the formula `mean + K_SIGMA*std`
+    Rather than relying on simple text comparison, the system achieves high-precision filtering of irrelevant content by ensembling three metrics: the similarity difference between "interest" and "non-interest" clusters (Negative Example Difference), Latent Topic Analysis using NMF (Non-negative Matrix Factorization), and a statistical dynamic threshold based on the formula `mean + K_SIGMA*std`.
 
-### Contextual Supplementation via Google Search Grounding
+* **Selective Contextual Supplementation via Google Search Grounding**
 
-By leveraging the Gemini API's search integration, the system avoids reliance solely on the LLM’s pre-trained knowledge. It fetches the latest real-time information and structural background context to generate accurate and up-to-date explanations.
+    To minimize API quota consumption, the system adopts a two-pass architecture. Pass 1 generates all articles without Grounding for stable, fast processing. Pass 2 then selectively applies Grounding only to the top N articles (default: 2) by combined_score, after a 60-second pre-wait to allow quota recovery. If a 429 error occurs during Grounding, the system waits 90 seconds and retries up to 3 times. If all attempts fail, it falls back gracefully to the Pass 1 result.
 
-### Persistent Feed Maintenance via Caching
+* **Persistent Feed Maintenance via Caching**
 
-Utilizing `actions/cache`, the system persists processed URLs (up to 500) and generated article data in JSON format. This prevents redundant processing while maintaining a constant stream of the latest 30 articles, ensuring stable feed delivery even when no new content is ingested.
+    Utilizing `actions/cache`, the system persists processed URLs (up to 500) and generated article data in JSON format. This prevents redundant processing while maintaining a constant stream of the latest 30 articles, ensuring stable feed delivery even when no new content is ingested.
 
-### Robust Error Handling & API Rate Limit Management
+* **Robust Error Handling & API Rate Limit Management**
 
-To accommodate free-tier API constraints (e.g., 15 RPM), the LLM generation module implements a 5-second pre-emptive throttling mechanism. Additionally, it employs exponential backoff via `tenacity` to automatically retry failed requests up to five times. In the event of total generation failure, the system falls back to summarizing the original article, ensuring continuous operation.
+    Pass 1 inserts an 8-second sleep between articles to avoid rate limit violations. Pass 2 applies a 60-second pre-wait before each Grounding attempt. For non-Grounding generation, `tenacity` implements exponential backoff with up to 5 automatic retries. In the event of total generation failure, the system falls back to summarizing the original article, ensuring continuous operation.
 
-### Optimized RSS Presentation
+* **Optimized RSS Presentation**
 
-Each article summary explicitly includes the source name and similarity score. The system features robust `enclosure` support with dynamic MIME type detection for image URLs and utilizes inline CSS to optimize HTML spacing and readability.
+    Each article summary explicitly includes the source name and similarity scores (interest similarity, differential score, combined score). Articles processed with Grounding are labeled with a badge. The system features robust `enclosure` support with dynamic MIME type detection for image URLs and inline CSS for HTML readability optimization.
 
 ## 4. Technical Stack
 
 * Programming Language: Python 3.10
 * LLM SDK: google-genai
-* Generation Model: gemini-3.1-flash-lite (with Google Search Grounding enabled)
+* Generation Model: gemini-3.1-flash-lite (Google Search Grounding selectively applied to top N articles)
 * Embedding Model: sentence-transformers (intfloat/multilingual-e5-small)
 * Retry Control: tenacity
 * RSS Parsing/Generation: feedparser, feedgen
@@ -111,7 +112,7 @@ Each article summary explicitly includes the source name and similarity score. T
 
 ## 5. Repository Structure
 
-* `main.py`: The main script that handles the entire pipeline from RSS retrieval, filtering, LLM explanation generation, and file output
+* `main.py`: The main script that handles the entire pipeline from RSS retrieval, filtering, LLM explanation generation, and file output. Built with `Article` / `ScoredArticle` / `ProcessedArticle` dataclasses and a centralized `CONFIG` dict for readability and maintainability.
 * `processed_urls.json`: A cache file automatically generated to store a list of read URLs and the most recent output articles
 * `requirements.txt`: List of dependency packages
 * `.github/workflows/generate-rss.yml`: GitHub Actions configuration file for scheduled execution and cache management
@@ -133,22 +134,20 @@ Each article summary explicitly includes the source name and similarity score. T
    * `API_KEY1`: Your obtained Gemini API key
    * `HF_TOKEN1`: Your obtained Hugging Face token
 
-4. **Configuring GitHub Variables/Environment Variables (Optional)**
-
-    * `USE_GROUNDING`: Setting this to "true" enables Google Search Grounding in LLM generation (note API usage limits).
-
-5. **Enabling GitHub Pages**
+4. **Enabling GitHub Pages**
 
     In your GitHub repository, navigate to `Settings` > `Pages` and properly configure the Build and deployment Source to "GitHub Actions" or similar settings.
 
-6. **Customizing Source Code**
+5. **Customizing Source Code**
 
-    Please customize the following variables in `main.py` according to your needs:
-    * `SOURCE_RSS_URLS`: List of RSS URLs for news sources you want to fetch
-    * `INTEREST_TEXTS`: Your current areas of interest (interest clusters)
-    * `DISINTEREST_TEXTS`: Areas you want to avoid (non-interest clusters)
-    * `EXCLUDE_KEYWORDS`: List of keywords to filter out paid articles, etc.
-    * `K_SIGMA` / `N_TOPICS`: Adjust statistical thresholds and number of topics for filtering
+    Please customize the `CONFIG` dict at the top of `main.py` and the following constants according to your needs:
+
+   * `SOURCE_RSS_URLS`: List of RSS URLs for news sources you want to fetch
+   * `INTEREST_TEXTS`: Your current areas of interest (interest clusters)
+   * `DISINTEREST_TEXTS`: Areas you want to avoid (non-interest clusters)
+   * `EXCLUDE_KEYWORDS`: List of keywords to filter out paid articles, etc.
+   * `CONFIG["filter_k_sigma"]` / `CONFIG["filter_n_topics"]`: Adjust statistical thresholds and number of NMF topics for filtering
+   * `CONFIG["max_grounded"]` / `CONFIG["grounding_wait_sec"]`: Adjust the number of articles to Grounding and the pre-wait duration
 
 ## 7. Usage Instructions
 
