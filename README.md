@@ -82,7 +82,69 @@ graph TD
 
 * **Advanced 3-Stage Inverse Filtering Algorithm**
 
-    Rather than relying on simple text comparison, the system achieves high-precision filtering of irrelevant content by ensembling three metrics: the similarity difference between "interest" and "non-interest" clusters (Negative Example Difference), Latent Topic Analysis using NMF (Non-negative Matrix Factorization), and a statistical dynamic threshold based on the formula `mean + K_SIGMA*std`.
+    Simply selecting articles that are "far from areas of interest" leads to frequent misclassification, because generic terms like "company," "change," and "problem" appear in both IT articles and political articles. To address this, three complementary metrics are combined:
+
+    | # | Metric | What it measures | Problem it solves |
+    |---|--------|-----------------|-------------------|
+    | 1 | **Negative Example Difference Score** | Quantifies "non-interest orientation" as the difference in similarity toward both interest and non-interest clusters | Cancels out misclassification from generic terms through positive/negative contrast |
+    | 2 | **NMF Score** | Identifies which latent topic groups an article belongs to, as discovered by cross-analyzing all articles | Supplements contextual and thematic characteristics that are difficult to capture at the word level |
+    | 3 | **Statistical Dynamic Threshold** | Evaluates each article's relative position within the current run's score distribution | Maintains consistent extraction accuracy regardless of daily variation in news volume or topic distribution |
+
+    By combining these into an ensemble score, the system accurately identifies articles that are "superficially similar to IT content but on an entirely different topic" — cases that a single metric would likely miss.
+
+    <details>
+    <summary style="color: #666; font-size: 0.9em; cursor: pointer; margin-top: 0.5em;">
+    🔍 <b>Detailed explanation of each filter</b>
+    </summary>
+
+    **STEP 1 ｜ Difference Score via Vector Similarity**
+
+    Article text is vectorized using the multilingual embedding model (`multilingual-e5-small`). Cosine similarity is then computed against both `INTEREST_TEXTS` (interest clusters) and `DISINTEREST_TEXTS` (non-interest clusters), which are defined in advance.
+
+    ```
+    Difference Score = max(similarity to non-interest clusters) − max(similarity to interest clusters)
+    ```
+
+    A higher value indicates that the article is "more non-interest oriented and less interest oriented." Rather than measuring distance from interest clusters alone, taking the difference in both directions suppresses misclassification caused by generic terms like "company," "change," and "problem" that appear frequently in both IT and political articles.
+
+    ---
+
+    **STEP 2 ｜ Latent Topic Score via NMF**
+
+    All article texts are converted into a TF-IDF matrix using character n-grams (2–3 characters), then decomposed into N latent topics using NMF (Non-negative Matrix Factorization). NMF is a technique that factorizes a matrix into the product of a "topic-word relationship matrix" and an "article-topic relationship matrix." Each topic is automatically discovered as a cluster of terms that tend to co-occur within the article corpus.
+
+    The representative terms of each topic are then vectorized using the embedder, and their cosine similarity to `INTEREST_TEXTS` is computed. The inverse of this value (`1 − similarity`) is treated as the "non-interest degree" of each topic. The NMF score for each article is computed as the weighted average of this non-interest degree across all topics, weighted by the article's topic membership proportion.
+
+    ```
+    Non-interest degree of topic k  = 1 − max(cosine similarity to INTEREST_TEXTS)
+
+    NMF score of article i          = Σ (proportion of topic k in article i × non-interest degree of topic k)
+                                          k
+    ```
+
+    While STEP 1 evaluates each article individually through direct vectorization, STEP 2 evaluates articles through the lens of latent topic structures discovered by cross-analyzing the entire article corpus. Together, they capture both word-level similarity and structural thematic differences.
+
+    ---
+
+    **STEP 3 ｜ Selection via Statistical Dynamic Threshold**
+
+    The scores from STEP 1 and STEP 2 are each transformed to the 0–1 range using the sigmoid function (sigmoid is used instead of min-max normalization to preserve the zero reference point of the difference score), then combined with weighting parameters α and β.
+
+    ```
+    Final Score = α × STEP 1 Score + β × STEP 2 Score
+    ```
+
+    **On α and β:** These weights represent the contribution of STEP 1 and STEP 2, respectively. The default is equal weighting (α = β = 0.5). If the difference score feels more accurate, increase α; if NMF feels more effective, increase β. Keeping the sum at 1.0 is recommended.
+
+    Next, the mean (μ) and standard deviation (σ) of the final scores across all articles are computed, and the threshold is determined dynamically.
+
+    ```
+    Threshold = μ + K × σ
+    ```
+
+    **On K:** This parameter controls the strictness of the threshold. With the default (K = 0.5), articles whose score is 0.5σ or more above the mean are selected for extraction. A larger K means stricter selection with fewer articles extracted; a smaller K means more lenient selection with more articles. Because the threshold is derived from the statistics of the current run's article corpus rather than a fixed value, stable extraction is maintained even as daily news volume and topic distribution vary.
+
+    </details>
 
 * **Selective Contextual Supplementation via Google Search Grounding**
 
@@ -112,7 +174,7 @@ graph TD
 
 ## 5. Repository Structure
 
-* `main.py`: The main script that handles the entire pipeline from RSS retrieval, filtering, LLM explanation generation, and file output. Built with `Article` / `ScoredArticle` / `ProcessedArticle` dataclasses and a centralized `CONFIG` dict for readability and maintainability.
+* `main.py`: The main script handling the entire pipeline from RSS retrieval, filtering, LLM explanation generation, and file output. Built with `Article` / `ScoredArticle` / `ProcessedArticle` dataclasses and a centralized `CONFIG` dict for readability and maintainability.
 * `processed_urls.json`: A cache file automatically generated to store a list of read URLs and the most recent output articles
 * `requirements.txt`: List of dependency packages
 * `.github/workflows/generate-rss.yml`: GitHub Actions configuration file for scheduled execution and cache management
