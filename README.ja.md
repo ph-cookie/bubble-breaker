@@ -114,7 +114,7 @@ graph TD
     次に、各トピックの代表語をembedderでベクトル化し、`INTEREST_TEXTS` との類似度を計算。その反転値（`1 − 類似度`）を「トピックの非興味度」とし、記事ごとに所属トピックの非興味度を割合で加重平均したものをNMFスコアとして出力します。
 
 
-    $$\text{トピック}k\text{の非興味度} = 1 - \max(\text{INTEREST_TEXTSとのコサイン類似度})$$
+    $$\text{トピック}k\text{の非興味度} = 1 - \max(\text{INTEREST\_TEXTSとのコサイン類似度})$$
     
     $$\text{記事}i\text{のNMFスコア} = \sum_{k} \left( \text{記事}i\text{におけるトピック}k\text{の割合} \times \text{トピック}k\text{の非興味度} \right)$$
 
