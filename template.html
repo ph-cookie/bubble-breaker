@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="description" content="フィルターバブルを打破するためのLLM（Gemini）活用カスタムRSSフィード配信サイト">
+  <title>LLM再構築フィード</title>
+  <style>
+    :root{--sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;--bg-color:#fff;--card-bg:#f4f6f8;--text-color:#333;--border-color:#d1d5db;--link-color:#1a6ca8;--badge-bg:#e8f4fd;--badge-text:#1a6ca8;--btn-bg:#ee802f;--btn-hover:#c66a26;--footer-text:#6c757d;--code-bg:#fff;--shadow-inset:inset 0 3px 6px rgba(0,0,0,.06),inset 0 1px 3px rgba(0,0,0,.04)}
+    @media(prefers-color-scheme:dark){:root{--bg-color:#242424;--card-bg:#141414;--text-color:#e0e0e0;--border-color:#333;--link-color:#6eb5ff;--badge-bg:#1a365d;--badge-text:#90cdf4;--code-bg:#242424;--shadow-inset:inset 0 4px 10px rgba(0,0,0,.5)}}
+    body{font-family:var(--sans);background-color:var(--bg-color);color:var(--text-color);line-height:1.6;max-width:960px;margin:0 auto;padding:2rem 1rem;transition:background-color .3s,color .3s}
+    a{color:var(--link-color);text-decoration:none}
+    a:hover{text-decoration:underline}
+    header{text-align:center;margin-bottom:2rem}
+    header h1{border-bottom:none;margin-bottom:.5rem;font-size:2rem}
+    .author{margin-top:0;color:var(--footer-text)}
+    section{background-color:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;padding:2.5rem;margin-bottom:2rem;box-shadow:var(--shadow-inset)}
+    section h2{margin-top:0;border-bottom:2px solid var(--border-color);padding-bottom:.5rem;font-size:1.35rem}
+    section h3{font-size:1.1rem;margin-top:2rem;margin-bottom:1rem;color:var(--text-color);display:flex;align-items:center;gap:.5rem}
+    .badge-container{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}
+    .badge{background:var(--badge-bg);color:var(--badge-text);padding:4px 12px;border-radius:16px;font-size:.85em;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+    .rss-link{display:block;text-align:center;background:var(--btn-bg);color:#fff;padding:14px 24px;border-radius:8px;font-weight:bold;font-size:1.1rem;margin-top:1.5rem;box-shadow:0 4px 6px rgba(238,128,47,.2);transition:background-color .2s,transform .1s,box-shadow .2s}
+    .rss-link:hover{background:var(--btn-hover);text-decoration:none;transform:translateY(-2px);box-shadow:0 6px 12px rgba(238,128,47,.3)}
+    .table-responsive{overflow-x:auto;margin:1.5rem 0;border-radius:8px}
+    table{width:100%;border-collapse:collapse;font-size:.95rem;min-width:600px;background-color:var(--bg-color)}
+    th,td{border:1px solid var(--border-color);padding:.85rem;text-align:left;vertical-align:top}
+    th{background-color:rgba(0,0,0,.02);font-weight:600;white-space:nowrap}
+    @media(prefers-color-scheme:dark){th{background-color:rgba(255,255,255,.05)}}
+    .details-group{display:flex;flex-direction:column;gap:1rem}
+    details{background-color:var(--bg-color);border:1px solid var(--border-color);border-radius:8px;padding:.5rem 1rem;box-shadow:0 2px 4px rgba(0,0,0,.02)}
+    summary{cursor:pointer;font-weight:bold;color:var(--text-color);padding:.5rem 0;outline:none;list-style-position:inside}
+    summary:hover{opacity:.8;color:var(--link-color)}
+    .details-content{margin-top:.5rem;padding-top:1rem;border-top:1px dashed var(--border-color);font-size:.95rem}
+    pre{background-color:var(--code-bg);padding:1rem;border-radius:6px;overflow-x:auto;font-size:.9rem;border:1px solid var(--border-color);margin:1rem 0}
+    code{font-family:Consolas,Monaco,"Andale Mono","Ubuntu Mono",monospace;background-color:var(--code-bg);padding:.2em .4em;border-radius:3px;font-size:.9em;border:1px solid var(--border-color)}
+    pre code{background-color:transparent;padding:0;border:none}
+    footer{text-align:center;margin-top:3rem;font-size:.85rem;color:var(--footer-text);border-top:1px solid var(--border-color);padding-top:1.5rem}
+    .timestamp{font-size:.85rem;color:var(--footer-text);text-align:right;margin-top:1.5rem;display:block}
+  </style>
+  </head>
+<body>
+  <header>
+    <h1>LLM再構築フィード</h1>
+    <p class="author">作成: <a href="https://github.com/ph-cookie" target="_blank" rel="noopener">ph-cookie</a></p>
+  </header>
+  <main>
+    <section>
+      <p>フィルターバブルを打破するため、ユーザーの関心領域外のニュースをLLM（Gemini）が構造化して配信するカスタムフィードです。</p>
+      <div class="badge-container">
+      </div>
+      <p>上記の3段階フィルタリングを実装。上位 {CONFIG['max_grounded']} 件はGoogle Search Groundingで最新情報を付加しています。</p>
+      <span class="timestamp">最終更新: {datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')} (JST)</span>
+    </section>
+    <section>
+      <h2>利用方法</h2>
+      <p>お使いのRSSリーダー（Feedly, Inoreaderなど）に以下のリンクを登録してください。</p>
+      <a href="rss.xml" class="rss-link">RSSフィード (rss.xml) を取得</a>
+    </section>
+    <section>
+      <h2>3段階の高度な逆フィルタリングアルゴリズム</h2>
+      <p>単純に「興味ある分野から遠い記事」を選ぶだけでは、「企業」「変化」「問題」のような汎用語がIT記事にも政治記事にも登場するため、誤判定が多発します。そこで以下の3段階の指標を組み合わせています。</p>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr><th>#</th><th>指標</th><th>何を測るか</th><th>解決する問題</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td><strong>負例差分スコア</strong></td><td>興味なし寄りの度合いを「興味あり・なし両方向の類似度の差」で定量化</td><td>汎用語による誤判定を、正例・負例の対比で相殺する</td></tr>
+            <tr><td>2</td><td><strong>NMFスコア</strong></td><td>全記事を横断的に分解した潜在トピックの中で、記事がどのテーマ群に属するか</td><td>単語レベルでは捉えにくい文脈・話題の性質を補完する</td></tr>
+            <tr><td>3</td><td><strong>統計的動的閾値</strong></td><td>その実行時の記事群における最終スコアの相対的な位置づけ</td><td>日ごとのニュース量・偏りに関わらず一定の抽出精度を保つ</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>これらを組み合わせたアンサンブルスコアにより、単一指標では取りこぼしやすい「見た目はIT記事に近いが話題は全く別」という記事を適切に捉えます。</p>
+      <h3>🔍 各フィルタの詳細説明</h3>
+      <div class="details-group">
+        <details>
+          <summary>STEP 1 ｜ ベクトル類似度による差分スコア</summary>
+          <div class="details-content">
+            <p>記事テキストを多言語埋め込みモデル（<code>multilingual-e5-small</code>）でベクトル化します。次に、あらかじめ定義した <code>INTEREST_TEXTS</code>（興味ありクラスタ）と <code>DISINTEREST_TEXTS</code>（興味なしクラスタ）のそれぞれとのコサイン類似度を計算します。</p>
+            <pre><code>差分スコア = max(興味なしクラスタとの類似度) − max(興味ありクラスタとの類似度)</code></pre>
+            <p>この値が大きいほど、記事が「興味なし寄りかつ興味あり寄りでない」ことを意味します。単純に興味ありとの距離だけを見るのではなく、両方向の距離の差を取ることで、IT・政治どちらの記事にも頻出する「企業」「変化」「問題」といった汎用語による誤判定を抑制します。</p>
+          </div>
+        </details>
+        <details>
+          <summary>STEP 2 ｜ NMFによる潜在トピックスコア</summary>
+          <div class="details-content">
+            <p>全記事のテキストを文字n-gram（2〜3文字）でTF-IDF行列に変換し、NMF（非負値行列因子分解）でN個の潜在トピックに分解します。NMFとは、行列を「トピックと単語の関係行列」と「記事とトピックの関係行列」の積に分解する手法です。各トピックは記事群の中で共起しやすい語のまとまりとして自動的に発見されます。</p>
+            <p>次に、各トピックの代表語をembedderでベクトル化し、<code>INTEREST_TEXTS</code> との類似度を計算。その反転値（<code>1 − 類似度</code>）を「トピックの非興味度」とし、記事ごとに所属トピックの非興味度を割合で加重平均したものをNMFスコアとして出力します。</p>
+            <p>トピックkの非興味度 = 1 − max(INTEREST_TEXTSとのコサイン類似度)</p>
+            <p>記事<i>i</i>のNMFスコア = &Sigma;<sub>k</sub> (記事<i>i</i>におけるトピック<i>k</i>の割合 &times; トピック<i>k</i>の非興味度)</p>
+            <p>STEP 1 が記事単体をそのままベクトル化して判定するのに対し、STEP 2 は全記事を横断的に分析した潜在的なトピック構造を通じて判定します。両者を組み合わせることで、単語レベルの類似性と話題レベルの構造的な差異の両面を捉えられます。</p>
+          </div>
+        </details>
+        <details>
+          <summary>STEP 3 ｜ 統計的動的閾値による選別</summary>
+          <div class="details-content">
+            <p>STEP 1・2 のスコアをそれぞれ sigmoid 関数で 0〜1 に変換し（差分スコアのゼロ基準を保持するため min-max ではなく sigmoid を使用）、重みパラメータ α・β で加重合算します。</p>
+            <pre><code>最終スコア = α × STEP1スコア + β × STEP2スコア</code></pre>
+            <p><strong>α・β について：</strong> それぞれ STEP 1・STEP 2 の寄与度を表す重みです。デフォルトは均等（α = β = 0.5）で、両指標を同等に扱います。「差分スコアの方が精度が高い」と感じる場合は α を大きく、「NMFの方が効いている」と感じる場合は β を大きくすることで調整できます。合計を 1.0 に保つことを推奨します。</p>
+            <p>次に、全記事の最終スコアの平均（μ）と標準偏差（σ）を計算し、閾値を動的に決定します。</p>
+            <pre><code>閾値 = μ + K × σ</code></pre>
+            <p><strong>K について：</strong> 閾値の厳しさを制御するパラメータです。デフォルト（K = 0.5）では、スコアが平均より 0.5σ 以上高い記事が抽出対象になります。K を大きくするほど厳選され抽出件数が減り、小さくするほど緩く多く抽出されます。固定値ではなく実行時の記事群の統計から閾値を導出するため、日ごとにニュースの偏りが変化しても安定した抽出ができます。</p>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+  <footer>
+    <p>Powered by GitHub Actions & Gemini API</p>
+  </footer>
+</body>
+</html>

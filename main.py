@@ -657,44 +657,38 @@ def build_feed(processed: List[ProcessedArticle], last_run_articles: List[Dict])
     fg.rss_file('rss.xml')
     logger.info(f"rss.xml 生成完了 (出力件数: {len(all_articles)}件)")
 
-    # f-string内でCSSの { } と混在させないため、動的な値を事前に変数へ取り出す
-    max_grounded_val = CONFIG['max_grounded']
-    now_jst_str      = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')
+    # template.html を読み込み、プレースホルダーを置換して index.html を生成
+    # template.html 内の動的箇所:
+    #   {CONFIG['max_grounded']}  → Grounding対象件数
+    #   {datetime.now(...)}       → 最終更新日時
+    #   badge-container（空）     → バッジ要素を挿入
+    badges_html = (
+        '<span class="badge">負例クラスタ差分スコア</span>\n'
+        '      <span class="badge">NMFトピックモデル</span>\n'
+        '      <span class="badge">統計的動的閾値</span>\n'
+        '      '
+    )
+    now_jst_str = datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')
 
-    html_content = f"""<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LLM再構築フィード v2</title>
-    <style>
-        body {{ font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }}
-        h1 {{ border-bottom: 2px solid #333; padding-bottom: 0.5rem; }}
-        .rss-link {{ display: inline-block; background: #ee802f; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 1rem; }}
-        .rss-link:hover {{ background: #c66a26; }}
-        .badge {{ display: inline-block; background: #e8f4fd; color: #1a6ca8; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; margin: 2px; }}
-    </style>
-</head>
-<body>
-    <h1>LLM再構築フィード v2</h1>
-    <p>フィルターバブルを打破するため、ユーザーの関心領域外のニュースをLLM（Gemini）が構造化して配信するカスタムフィードです。</p>
-    <p>
-        <span class="badge">負例クラスタ差分スコア</span>
-        <span class="badge">NMFトピックモデル</span>
-        <span class="badge">統計的動的閾値</span>
-        による3段階フィルタリングを実装。上位{max_grounded_val}件はGoogle Search Groundingで最新情報を付加。
-    </p>
-    <p>最終更新: {now_jst_str} (JST)</p>
-    <h2>利用方法</h2>
-    <p>お使いのRSSリーダー（Feedly, Inoreaderなど）に以下のリンクを登録してください。</p>
-    <a href="rss.xml" class="rss-link">RSSフィード (rss.xml) を取得</a>
-    <p style="margin-top: 3rem; font-size: 0.8rem; color: #666;">Powered by GitHub Actions & Gemini API</p>
-</body>
-</html>
-"""
+    with open('template.html', 'r', encoding='utf-8') as f:
+        html_content = f.read()
+
+    html_content = (
+        html_content
+        .replace("{CONFIG['max_grounded']}", str(CONFIG['max_grounded']))
+        .replace(
+            "{datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')}",
+            now_jst_str
+        )
+        .replace(
+            '<div class="badge-container">\n      </div>',
+            '<div class="badge-container">\n      ' + badges_html + '</div>'
+        )
+    )
+
     with open('index.html', 'w', encoding='utf-8') as f:
         f.write(html_content)
-    logger.info("index.html 生成完了")
+    logger.info("index.html 生成完了 (template.html から生成)")
 
     return all_articles
 
